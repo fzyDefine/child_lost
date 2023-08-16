@@ -1,0 +1,1 @@
+"ATcommand.c" LARGE OMF2 OPTIMIZE (8,SPEED) BROWSE DEBUG PRINT(.\Listings\ATcommand.lst) OBJECT(.\Objects\ATcommand.obj)

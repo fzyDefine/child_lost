@@ -1,0 +1,242 @@
+C51 COMPILER V9.59.0.0   MAIN                                                              04/23/2023 12:45:38 PAGE 1   
+
+
+C51 COMPILER V9.59.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Objects\main.obj
+COMPILER INVOKED BY: D:\keil\keil_mdk\C51\BIN\C51.EXE main.c LARGE OMF2 OPTIMIZE(8,SPEED) BROWSE DEBUG PRINT(.\Listings\
+                    -main.lst) OBJECT(.\Objects\main.obj)
+
+line level    source
+
+   1          #include <STC15F2K60S2.H>
+   2          #include <STDLIB.H>
+   3          #include <STRING.H>
+   4          #include <stdio.h>
+   5          #include <INTRINS.H>
+   6          #include "Delay.h"
+   7          #include "UART.h"
+   8          #include "LCD1602.h"
+   9          #include "gps.h"
+  10          #include "ATcommand.h"
+  11          #include "24l01.h"
+  12          #include "Timer0.h"
+  13          
+  14          #define u8 unsigned char
+  15          #define u16 unsigned int
+  16          
+  17          sbit BEEP = P2^4;
+  18          
+  19          u8 ambulance_beep = 0;
+  20          u8 pwm_up = 10;
+  21          u8 add_flag = 1;
+  22          
+  23          char *phone ="19827056722";
+  24          char send_msg_flag = 0;
+  25          
+  26          char recbuf[TX_PLOAD_WIDTH] = "";
+  27          char cpybuf[TX_PLOAD_WIDTH] = "";
+  28          
+  29          char error_times = 0;
+  30          
+  31          void Delay350us()               //@11.0592MHz
+  32          {
+  33   1              unsigned char i, j;
+  34   1      
+  35   1              _nop_();
+  36   1              _nop_();
+  37   1              _nop_();
+  38   1              i = 4;
+  39   1              j = 192;
+  40   1              do
+  41   1              {
+  42   2                      while (--j);
+  43   2              } while (--i);
+  44   1      }
+  45          
+  46          void Delay500us()               //@11.0592MHz
+  47          {
+  48   1              unsigned char i, j;
+  49   1      
+  50   1              _nop_();
+  51   1              _nop_();
+  52   1              i = 6;
+  53   1              j = 93;
+  54   1              do
+C51 COMPILER V9.59.0.0   MAIN                                                              04/23/2023 12:45:38 PAGE 2   
+
+  55   1              {
+  56   2                      while (--j);
+  57   2              } while (--i);
+  58   1      }
+  59          
+  60          
+  61          void ambulance_voice()
+  62          {
+  63   1              u8 i=8;  //控制蜂鸣器发出警音次数
+  64   1              u8 j = 0;
+  65   1          u16 y;
+  66   1              EA = 0;
+  67   1               
+  68   1              for(;i>0;i--)  //初值调用变量i的初始赋值
+  69   1              {
+  70   2                      for(y=0;y<2000;y++)  //700Hz频率，持续1秒
+  71   2                      {    
+  72   3                              BEEP=1;
+  73   3                              Delay350us();
+  74   3                              BEEP=0;
+  75   3                              Delay350us();
+  76   3                      }
+  77   2                      for(y=0;y<1600;y++)  //1000Hz频率，持续1秒
+  78   2                      {
+  79   3                              BEEP=1;
+  80   3                              Delay500us();
+  81   3                              BEEP=0;
+  82   3                              Delay500us();
+  83   3                      }    
+  84   2              }
+  85   1              i=0;  //清零
+  86   1              BEEP=1;  //关闭蜂鸣器
+  87   1      
+  88   1              EA = 1;
+  89   1      }
+  90          
+  91          void main()
+  92          {
+  93   1              unsigned char i = 0;
+  94   1              unsigned char rec_flag = 0;
+  95   1              unsigned char start_flag = 0;
+  96   1      
+  97   1              UART01_Init();
+  98   1              Uart02_Init();
+  99   1              Timer0_Init();
+ 100   1      
+ 101   1              Nrf2401_Init();//Nrf初始化
+ 102   1              Delay_ms(10);
+ 103   1              RX_Mode();      
+ 104   1              BEEP = 1;
+ 105   1      
+ 106   1              LCD_Init();
+ 107   1      
+ 108   1      
+ 109   1      /**/
+ 110   1              /*GSM*/
+ 111   1              LCD_ShowString(2,1,"SIM INITing");
+ 112   1              Wait_CREG();
+ 113   1              UART01_SendString("Set CREG succeed!\r\n");
+ 114   1              Set_MsgMode("0513");
+ 115   1              UART01_SendString("Set MSG_MODE succeed!\r\n");
+ 116   1              LCD_ShowString(2,1,"SIM INIT OK");
+C51 COMPILER V9.59.0.0   MAIN                                                              04/23/2023 12:45:38 PAGE 3   
+
+ 117   1              clrStruct();    //清空GPS缓存数组
+ 118   1      
+ 119   1              send_msg_flag = 1;
+ 120   1              while(1)
+ 121   1              {
+ 122   2      
+ 123   2                      memset(recbuf,0,TX_PLOAD_WIDTH);
+ 124   2                      Nrf_RecString(recbuf,TX_PLOAD_WIDTH,&rec_flag);
+ 125   2      
+ 126   2                      if(recbuf[0]!=0)
+ 127   2                      {
+ 128   3                              start_flag++;   //只要接收到了一次信号就代表启动成功
+ 129   3                              memcpy(cpybuf,recbuf,TX_PLOAD_WIDTH);   //拷贝有效信息
+ 130   3      
+ 131   3                              if(start_flag>100)
+ 132   3                                      start_flag = 1;
+ 133   3                      }
+ 134   2                      
+ 135   2                      if( start_flag )        //报警
+ 136   2                      {
+ 137   3                              if(recbuf[0]== 0 && recbuf[1]== 0 && recbuf[2]== 0&&recbuf[3]== 0)
+ 138   3                              {
+ 139   4                                      error_times++;
+ 140   4                              }
+ 141   3                              else
+ 142   3                                      error_times = 0;
+ 143   3      
+ 144   3                              
+ 145   3                              if(error_times >= 5)
+ 146   3                              {
+ 147   4                                      if(send_msg_flag)
+ 148   4                                      {
+ 149   5                                              
+ 150   5                                              Send_Msg(phone,cpybuf); //发送有效信息
+ 151   5                                              send_msg_flag = 0;
+ 152   5                                      }
+ 153   4                                      ambulance_voice();
+ 154   4                              
+ 155   4                              }
+ 156   3                              else
+ 157   3                                      BEEP = 1;
+ 158   3                      
+ 159   3      
+ 160   3                      }
+ 161   2                      else
+ 162   2                              BEEP = 1;
+ 163   2      
+ 164   2                      for(i=0;i<32;i++)
+ 165   2                      {
+ 166   3                              LCD_ShowChar(i/16+1,i%16+1,recbuf[i]);
+ 167   3                      }
+ 168   2                      Delay_ms(500);
+ 169   2              }       
+ 170   1      }
+ 171          
+ 172          void Timer0_Routine() interrupt 1
+ 173          {
+ 174   1              static unsigned int T0Count;
+ 175   1              static int j_ms = 0;
+ 176   1      
+ 177   1              if(j_ms++ == 200)
+ 178   1              {
+C51 COMPILER V9.59.0.0   MAIN                                                              04/23/2023 12:45:38 PAGE 4   
+
+ 179   2                      j_ms = 0;
+ 180   2                      
+ 181   2              
+ 182   2                      if(pwm_up >= 100 || pwm_up <= 0)
+ 183   2                              add_flag = !add_flag;
+ 184   2      
+ 185   2                      if(add_flag)
+ 186   2                              pwm_up += 10;
+ 187   2                      else
+ 188   2                              pwm_up -= 10;
+ 189   2              }
+ 190   1      
+ 191   1      
+ 192   1      
+ 193   1              if(send_msg_flag)
+ 194   1              {
+ 195   2                      T0Count++;
+ 196   2                      if(T0Count>=3000)
+ 197   2                      {
+ 198   3                              T0Count=0;
+ 199   3                              send_msg_flag = 1;
+ 200   3                      }
+ 201   2              }
+ 202   1              else
+ 203   1                      T0Count = 0;
+ 204   1      
+ 205   1      
+ 206   1      }
+ 207          
+ 208          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    666    ----
+   CONSTANT SIZE    =     85    ----
+   XDATA SIZE       =     92       4
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
